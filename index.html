@@ -14,7 +14,8 @@
 </head>
 <body>
 
-    <video class="input_video"></video>
+    <!-- 增加 playsinline 属性以更好适配 iOS 浏览器 -->
+    <video class="input_video" playsinline muted autoplay></video>
 
     <!-- 依赖库 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -28,30 +29,32 @@
         // =========================================================================
         const CONFIG = {
             // --- 1. 基础外观 ---
-            backgroundColor: 0x000000,   // 背景颜色
-            particleColor: 0x00BFFF,     // 粒子颜色 (蓝玫瑰色)
-            particleCount: 4500,         // 粒子数量
-            particleSize: 0.38,          // 粒子大小
-            fogColor: 0x000010,          // 环境雾气颜色
+            backgroundColor: 0x000000,
+            particleColor: 0x00BFFF,
+            particleCount: 4500,
+            particleSize: 0.38,
+            fogColor: 0x000010,
 
             // --- 2. 显示内容 ---
-            textOneFinger: "For PP",     // 单指显示的文字
-            textTwoFingers: "2026.2.1",  // 双指显示的文字
+            textOneFinger: "For PP",
+            textTwoFingers: "2026.2.1",
 
             // --- 3. 尺寸与位置 ---
-            heartScale: 16,              // 爱心大小
-            textScale: 0.12,             // 文字大小
-            cameraDistance: 30,          // 摄像机距离
+            heartScale: 16,
+            textScale: 0.12,
+
+            // [修改] 基础摄像机距离 (这是横屏时的标准距离)
+            baseCameraDistance: 28,
 
             // --- 4. 动画与交互 ---
-            morphSpeed: 0.1,            // 变形速度
-            rotationSensitivity: 3.5,    // 旋转灵敏度
-            heartBeatStrength: 0.25,     // 心跳幅度
+            morphSpeed: 0.1,
+            rotationSensitivity: 3.5,
+            heartBeatStrength: 0.25,
 
             // --- 5. 手势缩放配置 ---
-            handScaleMultiplier: 9.0,    // 缩放倍率
-            minScale: 0.2,               // 最小缩放
-            maxScale: 3.0                // 最大缩放
+            handScaleMultiplier: 9.0,
+            minScale: 0.2,
+            maxScale: 3.0
         };
         // =========================================================================
 
@@ -71,12 +74,42 @@
         scene.fog = new THREE.FogExp2(CONFIG.fogColor, 0.01);
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = CONFIG.cameraDistance;
+        // 初始位置稍后由 updateCameraLayout 设置
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         document.body.appendChild(renderer.domElement);
+
+        // --- ★★★ 核心修改：响应式布局函数 ★★★ ---
+        function updateCameraLayout() {
+            // 1. 更新渲染器大小
+            renderer.setSize(window.innerWidth, window.innerHeight);
+
+            // 2. 更新摄像机长宽比
+            const aspect = window.innerWidth / window.innerHeight;
+            camera.aspect = aspect;
+            camera.updateProjectionMatrix();
+
+            // 3. 智能计算摄像机距离 (Z轴)
+            // 逻辑：如果屏幕比 1:1 更窄 (竖屏)，就需要把摄像机拉远，否则文字显示不全
+            // 0.8 是一个修正系数，因为文字比较宽
+            if (aspect < 1.0) {
+                // 竖屏模式 (手机)
+                camera.position.z = CONFIG.baseCameraDistance / (aspect * 0.85);
+            } else {
+                // 横屏模式 (电脑)
+                camera.position.z = CONFIG.baseCameraDistance;
+            }
+        }
+
+        // 初始化调用一次
+        updateCameraLayout();
+
+        // 监听窗口大小变化
+        window.addEventListener('resize', updateCameraLayout);
+        // ---------------------------------------------
+
 
         // --- 粒子纹理 ---
         function createBrightTexture() {
@@ -235,7 +268,7 @@
         const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
         hands.setOptions({
             maxNumHands: 1,
-            modelComplexity: 1,
+            modelComplexity: 0, // [优化] 手机端使用轻量模型以提升性能
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
         });
@@ -305,25 +338,18 @@
 
         animate();
 
-        // 窗口大小适配
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-
-        // --- ★ 新增：点击屏幕切换全屏 ★ ---
+        // --- 点击屏幕切换全屏 ---
         document.addEventListener('click', () => {
             if (!document.fullscreenElement) {
-                // 进入全屏
-                document.documentElement.requestFullscreen().catch(err => {
-                    console.log(`全屏请求失败: ${err.message}`);
-                });
-            } else {
-                // 退出全屏
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
+                // 尝试进入全屏
+                if (document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen().catch(err => console.log(err));
+                } else if (document.documentElement.webkitRequestFullscreen) { // iOS/Safari 兼容
+                    document.documentElement.webkitRequestFullscreen();
                 }
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+                else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
             }
         });
 
